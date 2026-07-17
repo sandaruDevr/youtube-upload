@@ -1,6 +1,7 @@
 import logging
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
@@ -13,7 +14,13 @@ USE_POSTGRES = bool(settings.database_url)
 if USE_POSTGRES:
     import asyncpg
 
-_pg_pool: asyncpg.Pool | None = None
+if TYPE_CHECKING:
+    if USE_POSTGRES:
+        _pg_pool: asyncpg.Pool | None = None
+    else:
+        _pg_pool = None
+else:
+    _pg_pool = None
 
 _CREATE_TABLE_SQL = """
     CREATE TABLE IF NOT EXISTS yt_tokens (
