@@ -146,14 +146,21 @@ async def api_upload(
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
+    # File size limit: 50MB for Render free tier
+    MAX_SIZE = 50 * 1024 * 1024  # 50MB
+    size = 0
     ext = Path(file.filename).suffix.lower()
     input_path = TEMP_DIR / f"web_input_{uuid.uuid4().hex}{ext}"
     output_path = TEMP_DIR / f"web_short_{uuid.uuid4().hex}.mp4"
 
     try:
+        # Stream file to disk with size limit
         with open(input_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+            while chunk := await file.read(8192):  # 8KB chunks
+                size += len(chunk)
+                if size > MAX_SIZE:
+                    raise HTTPException(status_code=413, detail=f"File too large (max 50MB)")
+                f.write(chunk)
 
         if ext in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
             await asyncio.to_thread(process_image, input_path, output_path)

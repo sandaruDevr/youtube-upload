@@ -62,11 +62,13 @@ def process_video(input_path: Path, output_path: Path) -> Path:
 
     args.extend([
         "-c:v", "libx264",
-        "-preset", "medium",
-        "-crf", "23",
+        "-preset", "ultrafast",
+        "-crf", "28",
+        "-threads", "1",
         "-r", "30",
         "-t", "60",
         "-movflags", "+faststart",
+        "-pix_fmt", "yuv420p",
         str(output_path),
     ])
 
@@ -97,12 +99,13 @@ def process_image(input_path: Path, output_path: Path, duration: int = 30) -> Pa
             "-map", "[a]",
             "-t", str(duration),
             "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "23",
-            "-r", "30",
+            "-preset", "ultrafast",
+            "-crf", "28",
+            "-threads", "1",
             "-c:a", "aac",
             "-b:a", "128k",
             "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p",
             str(output_path),
         ]
     else:
@@ -117,13 +120,14 @@ def process_image(input_path: Path, output_path: Path, duration: int = 30) -> Pa
             "-map", "1:a",
             "-t", str(duration),
             "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "23",
-            "-r", "30",
+            "-preset", "ultrafast",
+            "-crf", "28",
+            "-threads", "1",
             "-c:a", "aac",
             "-b:a", "128k",
             "-shortest",
             "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p",
             str(output_path),
         ]
 
