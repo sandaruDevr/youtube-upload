@@ -169,14 +169,17 @@ async def api_upload(
 
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
-        video_id = await asyncio.to_thread(
-            upload_short,
-            output_path,
-            title,
-            description,
-            tag_list,
-            privacy,
-            token_data["refresh_token"],
+        video_id = await asyncio.wait_for(
+            asyncio.to_thread(
+                upload_short,
+                output_path,
+                title,
+                description,
+                tag_list,
+                privacy,
+                token_data["refresh_token"],
+            ),
+            timeout=300,  # 5 minutes
         )
 
         return JSONResponse({
@@ -184,6 +187,9 @@ async def api_upload(
             "video_id": video_id,
             "url": f"https://www.youtube.com/watch?v={video_id}",
         })
+    except asyncio.TimeoutError:
+        logger.error("YouTube upload timed out after 5 minutes")
+        return JSONResponse({"success": False, "error": "YouTube upload timed out. Try a smaller file or check your network connection."}, status_code=504)
     except Exception as e:
         logger.exception("Web upload failed: %s", str(e))
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)

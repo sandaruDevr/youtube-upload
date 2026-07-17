@@ -94,7 +94,7 @@ def upload_short(
         str(video_path),
         mimetype="video/mp4",
         resumable=True,
-        chunksize=10 * 1024 * 1024,
+        chunksize=5 * 1024 * 1024,
     )
 
     request = youtube.videos().insert(
@@ -103,9 +103,10 @@ def upload_short(
         media_body=media,
     )
 
+    logger.info("Starting YouTube upload...")
     response = None
     while response is None:
-        status, response = request.next_chunk()
+        status, response = request.next_chunk(num_retries=3)
         if status:
             logger.info("Upload progress: %d%%", int(status.progress() * 100))
 
