@@ -232,11 +232,12 @@ uploadForm.addEventListener('submit', async (e) => {
             method: 'POST',
             body: formData,
         });
+        const responseText = await res.text();
         let data;
         try {
-            data = await res.json();
+            data = JSON.parse(responseText);
         } catch {
-            throw new Error('Server returned an error. Check if the file is valid.');
+            throw new Error(`Server returned non-JSON response (${res.status}): ${responseText.substring(0, 500)}`);
         }
 
         if (data.success) {

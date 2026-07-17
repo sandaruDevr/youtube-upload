@@ -178,7 +178,7 @@ async def api_upload(
             "url": f"https://www.youtube.com/watch?v={video_id}",
         })
     except Exception as e:
-        logger.exception("Web upload failed")
+        logger.exception("Web upload failed: %s", str(e))
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
     finally:
         try:
