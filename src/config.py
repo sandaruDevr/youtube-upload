@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     oauth_redirect_uri: str = "http://localhost:8080/oauth/callback"
     session_secret: str = "change-me-in-production"
     db_path: str = "data/tokens.db"
+    database_url: str = ""
 
     class Config:
         env_file = ".env"

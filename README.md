@@ -94,21 +94,22 @@ Set the printed refresh token as `YOUTUBE_REFRESH_TOKEN` in `.env`.
 1. Push this repo to GitHub
 2. Go to [Render](https://render.com) → New → Web Service → Connect your GitHub repo
 3. Render will detect the `Dockerfile` automatically (or use `render.yaml` for blueprint deploy)
-4. Set environment variables in Render dashboard:
+4. **Add a PostgreSQL database** (free tier available) — Render will auto-set `DATABASE_URL` env var
+5. Set environment variables in Render dashboard:
    - `YOUTUBE_CLIENT_SECRET_JSON` — paste client_secret.json content
    - `OAUTH_REDIRECT_URI` — `https://your-app.onrender.com/oauth/callback`
    - `SESSION_SECRET` — random string
    - `TELEGRAM_BOT_TOKEN` (optional)
    - `YOUTUBE_REFRESH_TOKEN` (only for Telegram bot)
    - `MUSIC_TRACK_FILENAME` (default: `music.mp3`)
-5. Deploy
-6. Open your Render URL → connect YouTube → start uploading
+6. Deploy
+7. Open your Render URL → connect YouTube → start uploading
 
 **Important for Google OAuth:** Add `https://your-app.onrender.com/oauth/callback` to authorized redirect URIs in Google Cloud Console.
 
 **Note:** The music track file needs to be committed to the repo in `assets/`. Remove `assets/music.*` from `.gitignore` to commit it.
 
-**Note:** Render's free tier spins down after inactivity. The SQLite DB persists across deploys on Render's disk but resets if the service is recreated. For production, use Render's PostgreSQL add-on or Telegram bot mode with `YOUTUBE_REFRESH_TOKEN` env var.
+**Note:** Render's free tier spins down after inactivity. With PostgreSQL, tokens persist across restarts. Without PostgreSQL (SQLite), tokens are lost on service restart.
 
 ## Usage
 
