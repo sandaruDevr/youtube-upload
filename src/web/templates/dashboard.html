@@ -117,8 +117,15 @@
         </div>
 
         <div id="resultCard" class="hidden bg-green-500/10 backdrop-blur-sm rounded-2xl p-5 sm:p-6 border border-green-500/20">
-            <h3 class="text-base sm:text-lg font-semibold mb-2 text-green-400">Upload Complete!</h3>
-            <a id="resultLink" href="#" target="_blank" class="text-violet-400 hover:text-violet-300 active:text-violet-200 underline text-sm break-all">View on YouTube &rarr;</a>
+            <div class="flex items-start gap-3">
+                <svg class="w-6 h-6 text-green-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <div>
+                    <h3 class="text-base sm:text-lg font-semibold mb-1 text-green-400">Queued for Publishing</h3>
+                    <p id="resultMessage" class="text-sm text-white/70">Your Short has been processed and added to the publishing queue. It will appear on your YouTube channel shortly.</p>
+                </div>
+            </div>
         </div>
 
         <div id="errorCard" class="hidden bg-red-500/10 backdrop-blur-sm rounded-2xl p-5 sm:p-6 border border-red-500/20">
@@ -142,7 +149,7 @@ const submitBtn = document.getElementById('submitBtn');
 const submitText = document.getElementById('submitText');
 const submitSpinner = document.getElementById('submitSpinner');
 const resultCard = document.getElementById('resultCard');
-const resultLink = document.getElementById('resultLink');
+const resultMessage = document.getElementById('resultMessage');
 const errorCard = document.getElementById('errorCard');
 const errorMessage = document.getElementById('errorMessage');
 const progressBar = document.getElementById('progressBar');
@@ -187,7 +194,7 @@ const progressMessages = [
     'Processing video...',
     'Formatting to 1080x1920...',
     'Adding background music...',
-    'Publishing to YouTube...',
+    'Queuing for publish...',
 ];
 let progressInterval = null;
 
@@ -243,7 +250,12 @@ uploadForm.addEventListener('submit', async (e) => {
         if (data.success) {
             stopProgress(true);
             resultCard.classList.remove('hidden');
-            resultLink.href = data.url;
+            if (data.message) {
+                resultMessage.textContent = data.message;
+            }
+            uploadForm.reset();
+            dropZoneContent.classList.remove('hidden');
+            filePreview.classList.add('hidden');
         } else {
             stopProgress(false);
             errorCard.classList.remove('hidden');

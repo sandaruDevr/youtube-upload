@@ -3,7 +3,7 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
@@ -126,9 +126,31 @@ async def dashboard(request: Request):
     )
 
 
+def _publish_to_youtube(
+    output_path: Path,
+    title: str,
+    description: str,
+    tag_list: list[str],
+    privacy: str,
+    refresh_token: str,
+):
+    """Runs in the background after processing — publishes to YouTube and cleans up."""
+    try:
+        video_id = upload_short(output_path, title, description, tag_list, privacy, refresh_token)
+        logger.info("Background publish succeeded: https://www.youtube.com/watch?v=%s", video_id)
+    except Exception:
+        logger.exception("Background YouTube publish failed for %s", output_path)
+    finally:
+        try:
+            output_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 @router.post("/api/upload")
 async def api_upload(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(...),
     description: str = Form(""),
@@ -169,37 +191,32 @@ async def api_upload(
 
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
-        video_id = await asyncio.wait_for(
-            asyncio.to_thread(
-                upload_short,
-                output_path,
-                title,
-                description,
-                tag_list,
-                privacy,
-                token_data["refresh_token"],
-            ),
-            timeout=300,  # 5 minutes
+        # Video is processed — queue the YouTube publish step in the background
+        # so the request doesn't hang waiting on the (slow) upload.
+        background_tasks.add_task(
+            _publish_to_youtube,
+            output_path,
+            title,
+            description,
+            tag_list,
+            privacy,
+            token_data["refresh_token"],
         )
 
         return JSONResponse({
             "success": True,
-            "video_id": video_id,
-            "url": f"https://www.youtube.com/watch?v={video_id}",
+            "queued": True,
+            "message": "Your Short has been processed and added to the publishing queue. It will appear on your YouTube channel shortly.",
         })
     except asyncio.TimeoutError:
-        logger.error("Upload pipeline timed out (processing or YouTube upload step)")
-        return JSONResponse({"success": False, "error": "Processing or upload timed out. The server may be low on resources (Render free tier) — try a smaller file."}, status_code=504)
+        logger.error("Video processing timed out")
+        return JSONResponse({"success": False, "error": "Video processing timed out. The server may be low on resources (Render free tier) — try a smaller file."}, status_code=504)
     except Exception as e:
         logger.exception("Web upload failed: %s", str(e))
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
     finally:
         try:
             input_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-        try:
-            output_path.unlink(missing_ok=True)
         except Exception:
             pass
 
