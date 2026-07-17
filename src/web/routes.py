@@ -163,9 +163,9 @@ async def api_upload(
                 f.write(chunk)
 
         if ext in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
-            await asyncio.to_thread(process_image, input_path, output_path)
+            await asyncio.wait_for(asyncio.to_thread(process_image, input_path, output_path), timeout=200)
         else:
-            await asyncio.to_thread(process_video, input_path, output_path)
+            await asyncio.wait_for(asyncio.to_thread(process_video, input_path, output_path), timeout=200)
 
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
@@ -188,8 +188,8 @@ async def api_upload(
             "url": f"https://www.youtube.com/watch?v={video_id}",
         })
     except asyncio.TimeoutError:
-        logger.error("YouTube upload timed out after 5 minutes")
-        return JSONResponse({"success": False, "error": "YouTube upload timed out. Try a smaller file or check your network connection."}, status_code=504)
+        logger.error("Upload pipeline timed out (processing or YouTube upload step)")
+        return JSONResponse({"success": False, "error": "Processing or upload timed out. The server may be low on resources (Render free tier) — try a smaller file."}, status_code=504)
     except Exception as e:
         logger.exception("Web upload failed: %s", str(e))
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)

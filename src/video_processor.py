@@ -1,6 +1,7 @@
 import logging
 import subprocess
 import shutil
+import time
 from pathlib import Path
 
 from .config import settings
@@ -18,7 +19,14 @@ def _check_ffmpeg() -> bool:
 def _run_ffmpeg(args: list[str]) -> None:
     cmd = ["ffmpeg", "-y", *args]
     logger.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    start = time.time()
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired as e:
+        logger.error("ffmpeg timed out after 180s (possibly OOM-killed or CPU-starved). stderr so far: %s", (e.stderr or "")[-1000:])
+        raise RuntimeError("Video processing timed out. The server may be low on CPU/memory — try a smaller file.")
+    elapsed = time.time() - start
+    logger.info("ffmpeg finished in %.1fs with returncode %d", elapsed, result.returncode)
     if result.returncode != 0:
         logger.error("ffmpeg stderr: %s", result.stderr)
         raise RuntimeError(f"ffmpeg failed: {result.stderr[-500:]}")
