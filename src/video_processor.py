@@ -89,16 +89,16 @@ def process_video(input_path: Path, output_path: Path) -> Path:
     return output_path
 
 
-def process_image(input_path: Path, output_path: Path, duration: int = 15) -> Path:
-    """Convert an image into a YouTube Shorts video (900x1600, with music)."""
+def process_image(input_path: Path, output_path: Path, duration: int = 30) -> Path:
+    """Convert an image into a YouTube Shorts video (720x1280, with music)."""
     if not _check_ffmpeg():
         raise RuntimeError("ffmpeg is not installed or not in PATH")
 
     music_path = settings.music_path
 
     vf = (
-        "scale=900:1600:force_original_aspect_ratio=decrease,"
-        "pad=900:1600:(ow-iw)/2:(oh-ih)/2:black,"
+        "scale=720:1280:force_original_aspect_ratio=decrease,"
+        "pad=720:1280:(ow-iw)/2:(oh-ih)/2:black,"
         "setsar=1"
     )
 
