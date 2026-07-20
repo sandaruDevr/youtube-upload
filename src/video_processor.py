@@ -17,19 +17,23 @@ def _check_ffmpeg() -> bool:
 
 
 def _run_ffmpeg(args: list[str]) -> None:
-    cmd = ["ffmpeg", "-y", *args]
+    cmd = ["ffmpeg", "-y", "-loglevel", "warning", *args]
     logger.info("Running: %s", " ".join(cmd))
     start = time.time()
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-    except subprocess.TimeoutExpired as e:
-        logger.error("ffmpeg timed out after 180s (possibly OOM-killed or CPU-starved). stderr so far: %s", (e.stderr or "")[-1000:])
+        stdout, stderr = proc.communicate(timeout=300)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        logger.error("ffmpeg timed out after 300s. stderr: %s", (stderr or b"").decode()[-1000:])
         raise RuntimeError("Video processing timed out. The server may be low on CPU/memory — try a smaller file.")
     elapsed = time.time() - start
-    logger.info("ffmpeg finished in %.1fs with returncode %d", elapsed, result.returncode)
-    if result.returncode != 0:
-        logger.error("ffmpeg stderr: %s", result.stderr)
-        raise RuntimeError(f"ffmpeg failed: {result.stderr[-500:]}")
+    logger.info("ffmpeg finished in %.1fs with returncode %d", elapsed, proc.returncode)
+    if proc.returncode != 0:
+        err_text = (stderr or b"").decode()
+        logger.error("ffmpeg stderr: %s", err_text)
+        raise RuntimeError(f"ffmpeg failed: {err_text[-500:]}")
 
 
 def process_video(input_path: Path, output_path: Path) -> Path:
@@ -42,8 +46,8 @@ def process_video(input_path: Path, output_path: Path) -> Path:
     # Build filter: scale to 1080x1920 with padding, trim to 60s, replace audio with music
     # Shorts are vertical 9:16 at 1080x1920
     vf = (
-        "scale=1080:1920:force_original_aspect_ratio=decrease,"
-        "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
+        "scale=900:1600:force_original_aspect_ratio=decrease,"
+        "pad=900:1600:(ow-iw)/2:(oh-ih)/2:black,"
         "setsar=1"
     )
 
@@ -71,7 +75,8 @@ def process_video(input_path: Path, output_path: Path) -> Path:
     args.extend([
         "-c:v", "libx264",
         "-preset", "ultrafast",
-        "-crf", "28",
+        "-tune", "zerolatency",
+        "-crf", "30",
         "-threads", "1",
         "-r", "30",
         "-t", "60",
@@ -84,16 +89,16 @@ def process_video(input_path: Path, output_path: Path) -> Path:
     return output_path
 
 
-def process_image(input_path: Path, output_path: Path, duration: int = 30) -> Path:
-    """Convert an image into a YouTube Shorts video (1080x1920, with music)."""
+def process_image(input_path: Path, output_path: Path, duration: int = 15) -> Path:
+    """Convert an image into a YouTube Shorts video (900x1600, with music)."""
     if not _check_ffmpeg():
         raise RuntimeError("ffmpeg is not installed or not in PATH")
 
     music_path = settings.music_path
 
     vf = (
-        "scale=1080:1920:force_original_aspect_ratio=decrease,"
-        "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
+        "scale=900:1600:force_original_aspect_ratio=decrease,"
+        "pad=900:1600:(ow-iw)/2:(oh-ih)/2:black,"
         "setsar=1"
     )
 
@@ -108,8 +113,10 @@ def process_image(input_path: Path, output_path: Path, duration: int = 30) -> Pa
             "-t", str(duration),
             "-c:v", "libx264",
             "-preset", "ultrafast",
-            "-crf", "28",
+            "-tune", "zerolatency",
+            "-crf", "30",
             "-threads", "1",
+            "-r", "30",
             "-c:a", "aac",
             "-b:a", "128k",
             "-movflags", "+faststart",
@@ -129,8 +136,10 @@ def process_image(input_path: Path, output_path: Path, duration: int = 30) -> Pa
             "-t", str(duration),
             "-c:v", "libx264",
             "-preset", "ultrafast",
-            "-crf", "28",
+            "-tune", "zerolatency",
+            "-crf", "30",
             "-threads", "1",
+            "-r", "30",
             "-c:a", "aac",
             "-b:a", "128k",
             "-shortest",
