@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import httpx
@@ -14,14 +15,16 @@ FIREBASE_DB_URL = settings.firebase_db_url
 async def verify_firebase_token(id_token_str: str) -> dict | None:
     """Verify a Firebase ID token and return the decoded payload (incl. uid)."""
     try:
-        decoded = id_token.verify_oauth2_token(
+        decoded = await asyncio.to_thread(
+            id_token.verify_oauth2_token,
             id_token_str,
             google_requests.Request(),
-            audience=settings.firebase_project_id,
+            audience=settings.firebase_web_api_key,
         )
+        logger.info("Firebase token verified for uid=%s", decoded.get("uid") or decoded.get("sub"))
         return decoded
-    except Exception:
-        logger.exception("Firebase token verification failed")
+    except Exception as e:
+        logger.error("Firebase token verification failed: %s", e)
         return None
 
 
