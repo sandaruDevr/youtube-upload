@@ -2,24 +2,31 @@ import asyncio
 import logging
 
 import httpx
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
+import jwt
+from jwt import PyJWKClient
 
 from .config import settings
 
 logger = logging.getLogger(__name__)
 
 FIREBASE_DB_URL = settings.firebase_db_url
+FIREBASE_PROJECT_ID = settings.firebase_project_id
+
+_jwks_client = PyJWKClient(
+    f"https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+)
 
 
 async def verify_firebase_token(id_token_str: str) -> dict | None:
     """Verify a Firebase ID token and return the decoded payload (incl. uid)."""
     try:
-        decoded = await asyncio.to_thread(
-            id_token.verify_oauth2_token,
+        signing_key = await asyncio.to_thread(_jwks_client.get_signing_key_from_jwt, id_token_str)
+        decoded = jwt.decode(
             id_token_str,
-            google_requests.Request(),
-            audience=settings.firebase_web_api_key,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=FIREBASE_PROJECT_ID,
+            issuer=f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}",
         )
         logger.info("Firebase token verified for uid=%s", decoded.get("uid") or decoded.get("sub"))
         return decoded
