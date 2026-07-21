@@ -1,9 +1,8 @@
-import asyncio
 import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Request, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
@@ -147,15 +146,43 @@ def _publish_to_youtube(
             pass
 
 
+def _process_and_queue(
+    input_path: Path,
+    output_path: Path,
+    is_image: bool,
+    refresh_token: str,
+):
+    """Process a single file and publish to YouTube. Runs sequentially in background."""
+    try:
+        if is_image:
+            process_image(input_path, output_path)
+        else:
+            process_video(input_path, output_path)
+
+        upload_short(output_path, "Short", "", [], "public", refresh_token)
+        logger.info("Published file: %s", input_path.name)
+    except Exception:
+        logger.exception("Failed to process/publish %s", input_path)
+    finally:
+        try:
+            input_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            output_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+MAX_SIZE = 50 * 1024 * 1024  # 50MB
+
+
 @router.post("/api/upload")
 async def api_upload(
     request: Request,
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    title: str = Form(...),
-    description: str = Form(""),
-    tags: str = Form(""),
-    privacy: str = Form("public"),
+    files: list[UploadFile] = File(...),
 ):
     session_id = _get_session_id(request)
     if not session_id:
@@ -165,60 +192,56 @@ async def api_upload(
     if not token_data:
         raise HTTPException(status_code=401, detail="YouTube account not connected")
 
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
 
-    # File size limit: 50MB for Render free tier
-    MAX_SIZE = 50 * 1024 * 1024  # 50MB
-    size = 0
-    ext = Path(file.filename).suffix.lower()
-    input_path = TEMP_DIR / f"web_input_{uuid.uuid4().hex}{ext}"
-    output_path = TEMP_DIR / f"web_short_{uuid.uuid4().hex}.mp4"
+    saved_files: list[tuple[Path, Path, bool]] = []
 
     try:
-        # Stream file to disk with size limit
-        with open(input_path, "wb") as f:
-            while chunk := await file.read(8192):  # 8KB chunks
-                size += len(chunk)
-                if size > MAX_SIZE:
-                    raise HTTPException(status_code=413, detail=f"File too large (max 50MB)")
-                f.write(chunk)
+        for file in files:
+            if not file.filename:
+                continue
 
-        if ext in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
-            await asyncio.wait_for(asyncio.to_thread(process_image, input_path, output_path), timeout=200)
-        else:
-            await asyncio.wait_for(asyncio.to_thread(process_video, input_path, output_path), timeout=200)
+            ext = Path(file.filename).suffix.lower()
+            input_path = TEMP_DIR / f"web_input_{uuid.uuid4().hex}{ext}"
+            output_path = TEMP_DIR / f"web_short_{uuid.uuid4().hex}.mp4"
+            is_image = ext in IMAGE_EXTS
 
-        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+            # Stream file to disk with size limit
+            size = 0
+            with open(input_path, "wb") as f:
+                while chunk := await file.read(8192):
+                    size += len(chunk)
+                    if size > MAX_SIZE:
+                        raise HTTPException(status_code=413, detail=f"File too large (max 50MB): {file.filename}")
+                    f.write(chunk)
 
-        # Video is processed — queue the YouTube publish step in the background
-        # so the request doesn't hang waiting on the (slow) upload.
-        background_tasks.add_task(
-            _publish_to_youtube,
-            output_path,
-            title,
-            description,
-            tag_list,
-            privacy,
-            token_data["refresh_token"],
-        )
+            saved_files.append((input_path, output_path, is_image))
+
+        if not saved_files:
+            raise HTTPException(status_code=400, detail="No valid files provided")
+
+        # Queue each file for sequential background processing + publishing
+        for input_path, output_path, is_image in saved_files:
+            background_tasks.add_task(
+                _process_and_queue,
+                input_path,
+                output_path,
+                is_image,
+                token_data["refresh_token"],
+            )
 
         return JSONResponse({
             "success": True,
             "queued": True,
-            "message": "Your Short has been processed and added to the publishing queue. It will appear on your YouTube channel shortly.",
+            "count": len(saved_files),
+            "message": f"{len(saved_files)} file(s) submitted to the publishing queue. They will be processed and published to your YouTube channel shortly.",
         })
-    except asyncio.TimeoutError:
-        logger.error("Video processing timed out")
-        return JSONResponse({"success": False, "error": "Video processing timed out. The server may be low on resources (Render free tier) — try a smaller file."}, status_code=504)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Web upload failed: %s", str(e))
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
-    finally:
-        try:
-            input_path.unlink(missing_ok=True)
-        except Exception:
-            pass
 
 
 @router.post("/api/disconnect")
