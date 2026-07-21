@@ -8,7 +8,6 @@ from telegram.ext import Application
 from .config import settings
 from .telegram_bot import build_application
 from .web.routes import router as web_router
-from .token_store import init_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,9 +24,6 @@ if settings.telegram_bot_token:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await init_db()
-    logger.info("Token database initialized")
-
     if bot_app:
         await bot_app.initialize()
         await bot_app.start()

@@ -8,6 +8,22 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>{% block title %}YouTube Shorts Uploader{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBX8o4tz4huXIjTyGC4qh8r30bq6I8NHD0",
+            authDomain: "aces-c8391.firebaseapp.com",
+            databaseURL: "https://aces-c8391-default-rtdb.firebaseio.com",
+            projectId: "aces-c8391",
+            storageBucket: "aces-c8391.firebasestorage.app",
+            messagingSenderId: "28850948424",
+            appId: "1:28850948424:web:6178cb6b027644c121cb7d",
+            measurementId: "G-LS43LG0V5S"
+        };
+        firebase.initializeApp(firebaseConfig);
+    </script>
     <script>
         tailwind.config = {
             theme: {

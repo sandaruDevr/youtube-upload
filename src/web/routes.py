@@ -7,8 +7,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from ..config import settings
-from ..token_store import store_token, get_token, delete_token
-from ..oauth_manager import get_authorization_url, exchange_code_for_tokens, generate_session_id
+from ..token_store import verify_firebase_token, get_refresh_token, delete_refresh_token
+from ..oauth_manager import get_authorization_url, exchange_code_for_tokens
 from ..video_processor import process_video, process_image, TEMP_DIR
 from ..youtube_uploader import upload_short
 
@@ -20,47 +20,54 @@ templates = Jinja2Templates(directory="src/web/templates")
 TEMP_DIR.mkdir(exist_ok=True)
 
 
-def _get_session_id(request: Request) -> str | None:
-    return request.cookies.get("yt_session")
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+async def _get_uid_from_request(request: Request) -> str | None:
+    """Extract and verify Firebase ID token from Authorization header."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    id_token_str = auth_header.split(" ", 1)[1]
+    decoded = await verify_firebase_token(id_token_str)
+    if not decoded:
+        return None
+    return decoded.get("uid") or decoded.get("sub")
 
 
-def _set_session_cookie(response, session_id: str):
-    response.set_cookie(
-        "yt_session",
-        session_id,
-        httponly=True,
-        samesite="lax",
-        max_age=60 * 60 * 24 * 365,
-    )
-
+# ---------------------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------------------
 
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    session_id = _get_session_id(request)
-    token_data = None
-    if session_id:
-        token_data = await get_token(session_id)
-
-    if token_data:
-        return RedirectResponse(url="/dashboard", status_code=302)
-
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@router.get("/login")
-async def login(request: Request):
-    session_id = _get_session_id(request)
-    if not session_id:
-        session_id = generate_session_id()
+@router.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
-    auth_url = get_authorization_url(state=session_id)
-    response = RedirectResponse(url=auth_url)
-    _set_session_cookie(response, session_id)
-    return response
+
+# ---------------------------------------------------------------------------
+# YouTube OAuth — initiate and callback
+# ---------------------------------------------------------------------------
+
+@router.get("/api/youtube/auth-url")
+async def youtube_auth_url(request: Request):
+    """Return the YouTube OAuth URL for the authenticated user."""
+    uid = await _get_uid_from_request(request)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    auth_url = get_authorization_url(state=uid)
+    return JSONResponse({"auth_url": auth_url})
 
 
 @router.get("/oauth/callback")
 async def oauth_callback(request: Request):
+    """YouTube OAuth callback — exchange code for tokens, redirect to frontend with token."""
     code = request.query_params.get("code")
     state = request.query_params.get("state")
     error = request.query_params.get("error")
@@ -77,26 +84,17 @@ async def oauth_callback(request: Request):
             {"request": request, "error": "Missing code or state in OAuth callback."},
         )
 
-    session_id = _get_session_id(request)
-    logger.info("OAuth callback - state=%s, session_id=%s, cookies=%s", state, session_id, dict(request.cookies))
-    if not session_id or session_id != state:
-        return templates.TemplateResponse(
-            "error.html",
-            {"request": request, "error": "Session mismatch. Please try connecting again."},
-        )
-
     try:
         token_info = exchange_code_for_tokens(code=code, state=state)
-        await store_token(
-            session_id=session_id,
-            refresh_token=token_info["refresh_token"],
-            access_token=token_info["access_token"],
-            expiry=token_info["expiry"],
-            client_id=token_info["client_id"],
-            client_secret=token_info["client_secret"],
-            token_uri=token_info["token_uri"],
-        )
-        return RedirectResponse(url="/dashboard", status_code=302)
+        refresh_token = token_info["refresh_token"]
+        if not refresh_token:
+            return templates.TemplateResponse(
+                "error.html",
+                {"request": request, "error": "No refresh token returned. You may have already connected this account. Try disconnecting and reconnecting."},
+            )
+        # Redirect to frontend with UID and refresh token — frontend stores it in Firebase DB
+        redirect = f"/dashboard?yt_uid={state}&yt_refresh_token={refresh_token}"
+        return RedirectResponse(url=redirect, status_code=302)
     except Exception as e:
         logger.exception("OAuth token exchange failed")
         return templates.TemplateResponse(
@@ -105,46 +103,9 @@ async def oauth_callback(request: Request):
         )
 
 
-@router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    session_id = _get_session_id(request)
-    if not session_id:
-        return RedirectResponse(url="/", status_code=302)
-
-    token_data = await get_token(session_id)
-    if not token_data:
-        return RedirectResponse(url="/", status_code=302)
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "connected": True,
-            "channel_title": token_data.get("channel_title") or "YouTube Account",
-        },
-    )
-
-
-def _publish_to_youtube(
-    output_path: Path,
-    title: str,
-    description: str,
-    tag_list: list[str],
-    privacy: str,
-    refresh_token: str,
-):
-    """Runs in the background after processing — publishes to YouTube and cleans up."""
-    try:
-        video_id = upload_short(output_path, title, description, tag_list, privacy, refresh_token)
-        logger.info("Background publish succeeded: https://www.youtube.com/watch?v=%s", video_id)
-    except Exception:
-        logger.exception("Background YouTube publish failed for %s", output_path)
-    finally:
-        try:
-            output_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-
+# ---------------------------------------------------------------------------
+# Background processing
+# ---------------------------------------------------------------------------
 
 def _process_and_queue(
     input_path: Path,
@@ -152,7 +113,7 @@ def _process_and_queue(
     is_image: bool,
     refresh_token: str,
 ):
-    """Process a single file and publish to YouTube. Runs sequentially in background."""
+    """Process a single file and publish to YouTube. Runs in background."""
     try:
         if is_image:
             process_image(input_path, output_path)
@@ -178,18 +139,26 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 MAX_SIZE = 50 * 1024 * 1024  # 50MB
 
 
+# ---------------------------------------------------------------------------
+# Upload API
+# ---------------------------------------------------------------------------
+
 @router.post("/api/upload")
 async def api_upload(
     request: Request,
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
 ):
-    session_id = _get_session_id(request)
-    if not session_id:
+    uid = await _get_uid_from_request(request)
+    if not uid:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    token_data = await get_token(session_id)
-    if not token_data:
+    # Get Firebase ID token for DB access
+    auth_header = request.headers.get("Authorization", "")
+    id_token_str = auth_header.split(" ", 1)[1]
+
+    refresh_token = await get_refresh_token(uid, id_token_str)
+    if not refresh_token:
         raise HTTPException(status_code=401, detail="YouTube account not connected")
 
     if not files:
@@ -207,7 +176,6 @@ async def api_upload(
             output_path = TEMP_DIR / f"web_short_{uuid.uuid4().hex}.mp4"
             is_image = ext in IMAGE_EXTS
 
-            # Stream file to disk with size limit
             size = 0
             with open(input_path, "wb") as f:
                 while chunk := await file.read(8192):
@@ -221,14 +189,13 @@ async def api_upload(
         if not saved_files:
             raise HTTPException(status_code=400, detail="No valid files provided")
 
-        # Queue each file for sequential background processing + publishing
         for input_path, output_path, is_image in saved_files:
             background_tasks.add_task(
                 _process_and_queue,
                 input_path,
                 output_path,
                 is_image,
-                token_data["refresh_token"],
+                refresh_token,
             )
 
         return JSONResponse({
@@ -244,25 +211,34 @@ async def api_upload(
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
-@router.post("/api/disconnect")
-async def api_disconnect(request: Request):
-    session_id = _get_session_id(request)
-    if session_id:
-        await delete_token(session_id)
-    response = JSONResponse({"success": True})
-    response.delete_cookie("yt_session")
-    return response
-
+# ---------------------------------------------------------------------------
+# Status & Disconnect
+# ---------------------------------------------------------------------------
 
 @router.get("/api/status")
 async def api_status(request: Request):
-    session_id = _get_session_id(request)
-    if not session_id:
+    uid = await _get_uid_from_request(request)
+    if not uid:
         return {"connected": False}
-    token_data = await get_token(session_id)
-    if not token_data:
+
+    auth_header = request.headers.get("Authorization", "")
+    id_token_str = auth_header.split(" ", 1)[1]
+
+    refresh_token = await get_refresh_token(uid, id_token_str)
+    if not refresh_token:
         return {"connected": False}
-    return {
-        "connected": True,
-        "channel_title": token_data.get("channel_title") or "YouTube Account",
-    }
+
+    return {"connected": True}
+
+
+@router.post("/api/disconnect")
+async def api_disconnect(request: Request):
+    uid = await _get_uid_from_request(request)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    auth_header = request.headers.get("Authorization", "")
+    id_token_str = auth_header.split(" ", 1)[1]
+
+    success = await delete_refresh_token(uid, id_token_str)
+    return JSONResponse({"success": success})

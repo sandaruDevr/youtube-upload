@@ -3,12 +3,35 @@
 {% block title %}Dashboard - Shorts Uploader{% endblock %}
 
 {% block nav_actions %}
-<button onclick="disconnect()" class="text-xs sm:text-sm text-white/60 hover:text-red-400 active:text-red-500 transition-colors px-2 py-1 touch-manipulation">Disconnect</button>
+<button onclick="signOut()" class="text-xs sm:text-sm text-white/60 hover:text-red-400 active:text-red-500 transition-colors px-2 py-1 touch-manipulation">Sign Out</button>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-2xl mx-auto">
-    <!-- Upload Form -->
+<div id="loadingState" class="flex items-center justify-center min-h-[60vh]">
+    <svg class="w-8 h-8 animate-spin text-violet-400" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+    </svg>
+</div>
+
+<div id="connectState" class="hidden max-w-2xl mx-auto">
+    <div class="bg-white/5 backdrop-blur-sm rounded-2xl p-5 sm:p-8 card-glow border border-white/10 text-center">
+        <svg class="w-12 h-12 sm:w-14 sm:h-14 mx-auto text-red-500 mb-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+        </svg>
+        <h2 class="text-xl sm:text-2xl font-bold mb-2">Connect Your YouTube Channel</h2>
+        <p class="text-white/50 text-sm sm:text-base mb-6">You need to connect your YouTube account once to start uploading Shorts.</p>
+        <button id="connectBtn" class="inline-flex items-center gap-3 bg-red-600 hover:bg-red-700 active:bg-red-800 transition-colors text-white font-semibold px-6 sm:px-8 py-4 rounded-xl text-base sm:text-lg touch-manipulation disabled:opacity-50">
+            <svg class="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+            </svg>
+            <span id="connectText">Connect YouTube</span>
+        </button>
+        <div id="connectError" class="hidden mt-4 text-sm text-red-400"></div>
+    </div>
+</div>
+
+<div id="uploadState" class="hidden max-w-2xl mx-auto">
     <div class="bg-white/5 backdrop-blur-sm rounded-2xl p-5 sm:p-8 card-glow border border-white/10">
         <h2 class="text-xl sm:text-2xl font-bold mb-2 flex items-center gap-2">
             <svg class="w-5 h-5 sm:w-6 sm:h-6 text-violet-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -17,9 +40,7 @@
             Upload Shorts
         </h2>
         <p class="text-sm text-white/50 mb-5 sm:mb-6">Drop your videos or images below. Each file becomes a separate Short.</p>
-
         <form id="uploadForm" class="space-y-4">
-            <!-- Multi-File Drop Zone -->
             <div id="dropZone" class="border-2 border-dashed border-white/20 rounded-xl p-6 sm:p-10 text-center cursor-pointer hover:border-violet-400/50 active:border-violet-400/50 transition-colors touch-manipulation min-h-[180px] sm:min-h-[220px] flex flex-col items-center justify-center">
                 <input type="file" id="fileInput" name="files" accept="video/*,image/*" multiple class="hidden">
                 <div id="dropZoneContent">
@@ -29,13 +50,9 @@
                     <p class="text-white/50 text-sm sm:text-base">Tap to browse or drag & drop</p>
                     <p class="text-xs text-white/30 mt-1">Select multiple files — MP4, MOV, JPG, PNG</p>
                 </div>
-                <div id="fileList" class="hidden w-full text-left space-y-2 max-h-48 overflow-y-auto">
-                </div>
+                <div id="fileList" class="hidden w-full text-left space-y-2 max-h-48 overflow-y-auto"></div>
             </div>
-
-            <!-- Submit -->
-            <button type="submit" id="submitBtn"
-                class="w-full bg-violet-600 hover:bg-violet-700 active:bg-violet-800 disabled:bg-white/10 disabled:cursor-not-allowed transition-colors text-white font-semibold px-6 py-4 rounded-xl text-base sm:text-lg flex items-center justify-center gap-2 touch-manipulation">
+            <button type="submit" id="submitBtn" class="w-full bg-violet-600 hover:bg-violet-700 active:bg-violet-800 disabled:bg-white/10 disabled:cursor-not-allowed transition-colors text-white font-semibold px-6 py-4 rounded-xl text-base sm:text-lg flex items-center justify-center gap-2 touch-manipulation">
                 <span id="submitText">Submit for Publishing</span>
                 <svg id="submitSpinner" class="hidden w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -44,8 +61,6 @@
             </button>
         </form>
     </div>
-
-    <!-- Queue Notice -->
     <div id="resultCard" class="hidden mt-4 bg-green-500/10 backdrop-blur-sm rounded-2xl p-5 sm:p-6 border border-green-500/20">
         <div class="flex items-start gap-3">
             <svg class="w-6 h-6 text-green-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -65,23 +80,28 @@
             </div>
         </div>
     </div>
-
-    <!-- Error -->
     <div id="errorCard" class="hidden mt-4 bg-red-500/10 backdrop-blur-sm rounded-2xl p-5 sm:p-6 border border-red-500/20">
         <h3 class="text-base sm:text-lg font-semibold mb-2 text-red-400">Upload Failed</h3>
         <p id="errorMessage" class="text-sm text-white/60 break-words"></p>
     </div>
-
-    <!-- Connection Status (compact) -->
-    <div class="mt-4 flex items-center gap-2 text-xs text-white/40">
-        <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0"></span>
-        <span class="truncate">{{ channel_title }}</span>
+    <div class="mt-4 flex items-center justify-between gap-2 text-xs text-white/40">
+        <div class="flex items-center gap-2 min-w-0">
+            <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0"></span>
+            <span id="userEmail" class="truncate"></span>
+        </div>
+        <button onclick="disconnectYouTube()" class="text-white/40 hover:text-red-400 active:text-red-500 transition-colors touch-manipulation flex-shrink-0">Disconnect YouTube</button>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+const loadingState = document.getElementById('loadingState');
+const connectState = document.getElementById('connectState');
+const uploadState = document.getElementById('uploadState');
+const connectBtn = document.getElementById('connectBtn');
+const connectText = document.getElementById('connectText');
+const connectError = document.getElementById('connectError');
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 const dropZoneContent = document.getElementById('dropZoneContent');
@@ -96,6 +116,48 @@ const errorCard = document.getElementById('errorCard');
 const errorMessage = document.getElementById('errorMessage');
 
 let selectedFiles = [];
+
+firebase.auth().onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    document.getElementById('userEmail').textContent = user.email || '';
+    const params = new URLSearchParams(window.location.search);
+    const ytUid = params.get('yt_uid');
+    const ytRefreshToken = params.get('yt_refresh_token');
+    if (ytUid && ytRefreshToken) {
+        try {
+            await firebase.database().ref('users/' + user.uid + '/youtube_refresh_token').set(ytRefreshToken);
+            window.history.replaceState({}, '', '/dashboard');
+        } catch (err) {
+            connectError.textContent = 'Failed to store YouTube token: ' + err.message;
+            connectError.classList.remove('hidden');
+        }
+    }
+    const snapshot = await firebase.database().ref('users/' + user.uid + '/youtube_refresh_token').once('value');
+    const hasToken = snapshot.exists() && snapshot.val();
+    loadingState.classList.add('hidden');
+    if (hasToken) { uploadState.classList.remove('hidden'); }
+    else { connectState.classList.remove('hidden'); }
+});
+
+connectBtn.addEventListener('click', async () => {
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+    connectError.classList.add('hidden');
+    connectBtn.disabled = true;
+    connectText.textContent = 'Getting authorization URL...';
+    try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/youtube/auth-url', { headers: { 'Authorization': 'Bearer ' + idToken } });
+        const data = await res.json();
+        if (data.auth_url) { window.location.href = data.auth_url; }
+        else { throw new Error(data.detail || 'Failed to get auth URL'); }
+    } catch (err) {
+        connectError.textContent = err.message || 'Failed to connect YouTube.';
+        connectError.classList.remove('hidden');
+        connectBtn.disabled = false;
+        connectText.textContent = 'Connect YouTube';
+    }
+});
 
 dropZone.addEventListener('click', (e) => {
     if (e.target.tagName !== 'INPUT') fileInput.click();
@@ -181,8 +243,12 @@ uploadForm.addEventListener('submit', async (e) => {
     }
 
     try {
+        const user = firebase.auth().currentUser;
+        if (!user) { window.location.href = '/'; return; }
+        const idToken = await user.getIdToken();
         const res = await fetch('/api/upload', {
             method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + idToken },
             body: formData,
         });
         const responseText = await res.text();
@@ -214,9 +280,19 @@ uploadForm.addEventListener('submit', async (e) => {
     }
 });
 
-async function disconnect() {
+async function disconnectYouTube() {
     if (!confirm('Disconnect your YouTube account?')) return;
-    await fetch('/api/disconnect', { method: 'POST' });
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+    try {
+        const idToken = await user.getIdToken();
+        await fetch('/api/disconnect', { method: 'POST', headers: { 'Authorization': 'Bearer ' + idToken } });
+    } catch {}
+    location.reload();
+}
+
+async function signOut() {
+    await firebase.auth().signOut();
     window.location.href = '/';
 }
 </script>

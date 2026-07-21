@@ -13,8 +13,11 @@ class Settings(BaseSettings):
     port: int = 8080
     oauth_redirect_uri: str = "http://localhost:8080/oauth/callback"
     session_secret: str = "change-me-in-production"
-    db_path: str = "data/tokens.db"
-    database_url: str = ""
+
+    # Firebase config
+    firebase_project_id: str = "aces-c8391"
+    firebase_db_url: str = "https://aces-c8391-default-rtdb.firebaseio.com"
+    firebase_web_api_key: str = "AIzaSyBX8o4tz4huXIjTyGC4qh8r30bq6I8NHD0"
 
     class Config:
         env_file = ".env"
