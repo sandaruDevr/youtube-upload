@@ -41,6 +41,7 @@ def get_authorization_url(state: str) -> tuple[str, str]:
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
+        prompt="consent",
     )
     return auth_url
 
